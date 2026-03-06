@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Ruby lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+      - run: gem install bundler
+      - run: bundle install
+      - name: Check gemspec validity
+        run: ruby -e "Gem::Specification.load('zvec.gemspec')"
+
+  test-pure-ruby:
+    name: "Pure Ruby tests (Ruby ${{ matrix.ruby }})"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ruby: ["3.1", "3.2", "3.3"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+      - run: gem install minitest
+      - name: Run pure Ruby tests (no native ext)
+        run: ruby -Ilib -Itest -e "Dir['test/test_{version,data_types,schema,doc,query,active_record}.rb'].each { |f| require File.expand_path(f) }"
+
+  test-native:
+    name: "Native tests (Ruby ${{ matrix.ruby }})"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ruby: ["3.2", "3.3"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install zvec build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake g++ git
+
+      - name: Build and install zvec
+        run: |
+          git clone --depth 1 https://github.com/alibaba/zvec /tmp/zvec
+          cd /tmp/zvec
+          mkdir build && cd build
+          cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_BUILD_TYPE=Release
+          make -j$(nproc)
+          sudo make install
+          sudo ldconfig
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+
+      - run: gem install bundler rice rake-compiler minitest
+
+      - name: Bundle install
+        run: bundle install
+
+      - name: Compile extension
+        run: bundle exec rake compile
+        env:
+          ZVEC_DIR: /tmp/zvec
+
+      - name: Run all tests
+        run: bundle exec ruby -Ilib -Itest -e "Dir['test/test_*.rb'].each { |f| require File.expand_path(f) }"
+        env:
+          LD_LIBRARY_PATH: /usr/local/lib
