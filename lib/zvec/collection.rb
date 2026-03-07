@@ -68,32 +68,28 @@ module Zvec
     def insert(docs)
       docs = [docs] unless docs.is_a?(Array)
       ext_docs = docs.map { |d| d.is_a?(Doc) ? d.ext_doc : d }
-      statuses = @ext.insert(ext_docs)
-      statuses.each { |s| raise Error, s.message unless s.ok? }
-      statuses
+      results = @ext.insert(ext_docs)
+      check_write_results!(results)
     end
 
     def upsert(docs)
       docs = [docs] unless docs.is_a?(Array)
       ext_docs = docs.map { |d| d.is_a?(Doc) ? d.ext_doc : d }
-      statuses = @ext.upsert(ext_docs)
-      statuses.each { |s| raise Error, s.message unless s.ok? }
-      statuses
+      results = @ext.upsert(ext_docs)
+      check_write_results!(results)
     end
 
     def update(docs)
       docs = [docs] unless docs.is_a?(Array)
       ext_docs = docs.map { |d| d.is_a?(Doc) ? d.ext_doc : d }
-      statuses = @ext.update(ext_docs)
-      statuses.each { |s| raise Error, s.message unless s.ok? }
-      statuses
+      results = @ext.update(ext_docs)
+      check_write_results!(results)
     end
 
     def delete(*pks)
       pks = pks.flatten.map(&:to_s)
-      statuses = @ext.delete_pks(pks)
-      statuses.each { |s| raise Error, s.message unless s.ok? }
-      statuses
+      results = @ext.delete_pks(pks)
+      check_write_results!(results)
     end
 
     def delete_by_filter(filter)
@@ -113,14 +109,22 @@ module Zvec
         output_fields: output_fields,
         query_params: query_params
       )
-      raw_docs = @ext.query(vq.ext_query)
-      raw_docs.map { |d| Doc.from_ext(d, schema: @schema) }
+      raw_results = @ext.query(vq.ext_query)
+      raw_results.map do |h|
+        Doc.new(
+          pk: h["pk"],
+          fields: h.reject { |k, _| %w[pk score doc_id].include?(k) },
+          schema: @schema
+        ).tap { |d| d.instance_variable_set(:@score, h["score"]) }
+      end
     end
 
     def fetch(*pks)
       pks = pks.flatten.map(&:to_s)
       raw = @ext.fetch(pks)
-      raw.transform_values { |d| Doc.from_ext(d, schema: @schema) }
+      raw.transform_values do |h|
+        Doc.new(pk: nil, fields: h, schema: @schema)
+      end
     end
 
     # Convenience: insert a hash directly
@@ -129,14 +133,31 @@ module Zvec
       insert(doc)
     end
 
+    private
+
+    def check_write_results!(results)
+      results.each do |ok, msg|
+        raise Error, (msg.empty? ? "Write operation failed" : msg) unless ok
+      end
+      results
+    end
+
+    public
+
     # Convenience: search with simpler API
     def search(vector, field: nil, top_k: 10, filter: nil)
       # Auto-detect vector field if not specified
       fname = field&.to_s
       unless fname
-        vfields = @ext.schema.vector_fields
-        raise Error, "No vector fields in schema" if vfields.empty?
-        fname = vfields.first.name
+        if @schema
+          vfield = @schema.ext_schema.vector_fields.first
+          raise Error, "No vector fields in schema" unless vfield
+          fname = vfield.name
+        else
+          vfields = @ext.schema.vector_fields
+          raise Error, "No vector fields in schema" if vfields.empty?
+          fname = vfields.first.name
+        end
       end
       query(field_name: fname, vector: vector, topk: top_k, filter: filter)
     end

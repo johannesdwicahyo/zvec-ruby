@@ -2,28 +2,50 @@
 
 Ruby bindings for [zvec](https://github.com/alibaba/zvec), a high-performance C++ vector database from Alibaba. Built with [Rice](https://github.com/jasonroelofs/rice) (Ruby's C++ binding library).
 
-## Prerequisites
-
-1. **Build and install zvec** from source:
-   ```bash
-   git clone https://github.com/alibaba/zvec
-   cd zvec && mkdir build && cd build
-   cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local
-   make -j$(nproc) && sudo make install
-   ```
-
-2. **Install Rice**: `gem install rice`
-
 ## Installation
+
+### Precompiled (recommended)
+
+Precompiled native gems are available for:
+
+| Platform | Architectures |
+|---|---|
+| Linux | x86_64, aarch64 |
+| macOS | x86_64 (Intel), arm64 (Apple Silicon) |
 
 ```ruby
 # Gemfile
 gem "zvec"
 ```
 
-If zvec is installed in a non-standard location:
 ```bash
-ZVEC_DIR=/path/to/zvec gem install zvec
+gem install zvec
+```
+
+No compiler or build tools needed — the gem ships with the native extension and all zvec dependencies statically linked.
+
+### From source
+
+If no precompiled gem is available for your platform, you'll need to build zvec first:
+
+```bash
+# 1. Build zvec from source
+git clone --depth 1 https://github.com/alibaba/zvec /tmp/zvec
+cd /tmp/zvec && mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+make -j$(nproc)
+
+# 2. Install the gem with ZVEC_DIR pointing to the build
+ZVEC_DIR=/tmp/zvec gem install zvec
+```
+
+Or using the included helper script:
+
+```bash
+git clone https://github.com/johannesdwicahyo/zvec-ruby
+cd zvec-ruby
+./script/build_zvec.sh
+ZVEC_DIR=/tmp/zvec bundle install && bundle exec rake compile
 ```
 
 ## Quick Start
@@ -48,6 +70,9 @@ collection.add(pk: "doc1", title: "Hello", year: 2025,
 # Search
 results = collection.search([0.1] * 128, top_k: 5)
 results.each { |doc| puts "#{doc.pk}: #{doc.score}" }
+
+# Clean up
+collection.destroy
 ```
 
 ## Schema DSL
@@ -98,7 +123,7 @@ collection.query(
   field_name: "embedding",
   vector: [...],
   topk: 10,
-  filter: "category == 'tech'",
+  filter: "category='tech'",
   include_vector: true,
   output_fields: ["title", "url"]
 )
@@ -140,6 +165,23 @@ article = Article.create!(title: "Hello", content: "World")
 # Vector similarity search
 Article.vector_search("similar articles", top_k: 5)
 Article.vector_search([0.1, 0.2, ...], top_k: 10, embed: false)
+```
+
+## Development
+
+```bash
+# Build zvec
+./script/build_zvec.sh
+
+# Compile and test
+ZVEC_DIR=/tmp/zvec bundle exec rake compile
+ZVEC_DIR=/tmp/zvec bundle exec rake test
+
+# Run pure Ruby tests only (no native extension needed)
+bundle exec rake test_pure
+
+# Package a native gem for your platform
+ruby script/package_native_gem.rb
 ```
 
 ## License

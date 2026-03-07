@@ -57,11 +57,11 @@ static std::string floats_to_query_bytes(Rice::Array rb_arr) {
 
 extern "C" void Init_zvec_ext() {
   Module rb_mZvec = define_module("Zvec");
-  Module rb_mExt = rb_mZvec.define_module("Ext");
+  Module rb_mExt = define_module_under(rb_mZvec, "Ext");
 
   // ---- enums ----
 
-  define_enum<zvec::DataType>("DataType", rb_mExt)
+  define_enum_under<zvec::DataType>("DataType", rb_mExt)
       .define_value("UNDEFINED", zvec::DataType::UNDEFINED)
       .define_value("BINARY", zvec::DataType::BINARY)
       .define_value("STRING", zvec::DataType::STRING)
@@ -92,21 +92,21 @@ extern "C" void Init_zvec_ext() {
       .define_value("ARRAY_FLOAT", zvec::DataType::ARRAY_FLOAT)
       .define_value("ARRAY_DOUBLE", zvec::DataType::ARRAY_DOUBLE);
 
-  define_enum<zvec::IndexType>("IndexType", rb_mExt)
+  define_enum_under<zvec::IndexType>("IndexType", rb_mExt)
       .define_value("UNDEFINED", zvec::IndexType::UNDEFINED)
       .define_value("HNSW", zvec::IndexType::HNSW)
       .define_value("IVF", zvec::IndexType::IVF)
       .define_value("FLAT", zvec::IndexType::FLAT)
       .define_value("INVERT", zvec::IndexType::INVERT);
 
-  define_enum<zvec::MetricType>("MetricType", rb_mExt)
+  define_enum_under<zvec::MetricType>("MetricType", rb_mExt)
       .define_value("UNDEFINED", zvec::MetricType::UNDEFINED)
       .define_value("L2", zvec::MetricType::L2)
       .define_value("IP", zvec::MetricType::IP)
       .define_value("COSINE", zvec::MetricType::COSINE)
       .define_value("MIPSL2", zvec::MetricType::MIPSL2);
 
-  define_enum<zvec::QuantizeType>("QuantizeType", rb_mExt)
+  define_enum_under<zvec::QuantizeType>("QuantizeType", rb_mExt)
       .define_value("UNDEFINED", zvec::QuantizeType::UNDEFINED)
       .define_value("FP16", zvec::QuantizeType::FP16)
       .define_value("INT8", zvec::QuantizeType::INT8)
@@ -179,6 +179,11 @@ extern "C" void Init_zvec_ext() {
           [](const zvec::IndexParams &p) { return p.type(); })
       .define_method("to_s", &zvec::IndexParams::to_string);
 
+  define_class_under<zvec::VectorIndexParams, zvec::IndexParams>(
+      rb_mExt, "VectorIndexParams")
+      .define_method("metric_type", &zvec::VectorIndexParams::metric_type)
+      .define_method("quantize_type", &zvec::VectorIndexParams::quantize_type);
+
   define_class_under<zvec::HnswIndexParams, zvec::VectorIndexParams>(
       rb_mExt, "HnswIndexParams")
       .define_constructor(
@@ -211,11 +216,6 @@ extern "C" void Init_zvec_ext() {
       .define_method("n_list", &zvec::IVFIndexParams::n_list)
       .define_method("n_iters", &zvec::IVFIndexParams::n_iters)
       .define_method("metric_type", &zvec::IVFIndexParams::metric_type);
-
-  define_class_under<zvec::VectorIndexParams, zvec::IndexParams>(
-      rb_mExt, "VectorIndexParams")
-      .define_method("metric_type", &zvec::VectorIndexParams::metric_type)
-      .define_method("quantize_type", &zvec::VectorIndexParams::quantize_type);
 
   define_class_under<zvec::InvertIndexParams, zvec::IndexParams>(
       rb_mExt, "InvertIndexParams")
@@ -265,8 +265,9 @@ extern "C" void Init_zvec_ext() {
       .define_method("index_type", &zvec::FieldSchema::index_type)
       .define_method("set_index_params",
                      [](zvec::FieldSchema &f,
-                        const zvec::IndexParams::Ptr &params) {
-                       f.set_index_params(params);
+                        const zvec::IndexParams &params) {
+                       auto ptr = params.clone();
+                       f.set_index_params(ptr);
                      })
       .define_method("to_s", &zvec::FieldSchema::to_string);
 
@@ -278,16 +279,40 @@ extern "C" void Init_zvec_ext() {
       .define_method("name", &zvec::CollectionSchema::name)
       .define_method("add_field",
                      [](zvec::CollectionSchema &s,
-                        zvec::FieldSchema::Ptr field) {
-                       auto status = s.add_field(field);
+                        const zvec::FieldSchema &field) {
+                       auto ptr = std::make_shared<zvec::FieldSchema>(field);
+                       auto status = s.add_field(ptr);
                        throw_if_error(status);
                      })
       .define_method("has_field?", &zvec::CollectionSchema::has_field)
-      .define_method("fields", &zvec::CollectionSchema::fields)
-      .define_method("field_names", &zvec::CollectionSchema::all_field_names)
-      .define_method("vector_fields", &zvec::CollectionSchema::vector_fields)
+      .define_method("fields",
+                     [](const zvec::CollectionSchema &s) {
+                       auto fields = s.fields();
+                       Array arr;
+                       for (auto &ptr : fields) arr.push(*ptr);
+                       return arr;
+                     })
+      .define_method("field_names",
+                     [](const zvec::CollectionSchema &s) {
+                       auto names = s.all_field_names();
+                       Array arr;
+                       for (auto &n : names) arr.push(Rice::Object(String(n)));
+                       return arr;
+                     })
+      .define_method("vector_fields",
+                     [](const zvec::CollectionSchema &s) {
+                       auto fields = s.vector_fields();
+                       Array arr;
+                       for (auto &ptr : fields) arr.push(*ptr);
+                       return arr;
+                     })
       .define_method("forward_fields",
-                     &zvec::CollectionSchema::forward_fields)
+                     [](const zvec::CollectionSchema &s) {
+                       auto fields = s.forward_fields();
+                       Array arr;
+                       for (auto &ptr : fields) arr.push(*ptr);
+                       return arr;
+                     })
       .define_method("to_s", &zvec::CollectionSchema::to_string);
 
   // ---- CreateIndexOptions, OptimizeOptions ----
@@ -319,7 +344,13 @@ extern "C" void Init_zvec_ext() {
       .define_method("pk=", &zvec::Doc::set_pk)
       .define_method("score", &zvec::Doc::score)
       .define_method("score=", &zvec::Doc::set_score)
-      .define_method("field_names", &zvec::Doc::field_names)
+      .define_method("field_names",
+                     [](const zvec::Doc &d) {
+                       auto names = d.field_names();
+                       Array arr;
+                       for (auto &n : names) arr.push(Rice::Object(String(n)));
+                       return arr;
+                     })
       .define_method("has?", &zvec::Doc::has)
       .define_method("has_value?", &zvec::Doc::has_value)
       .define_method("empty?", &zvec::Doc::is_empty)
@@ -377,64 +408,69 @@ extern "C" void Init_zvec_ext() {
                      [](const zvec::Doc &d, const std::string &f)
                          -> Rice::Object {
                        auto v = d.get<std::string>(f);
-                       return v ? Rice::Object(String(v.value())) : Qnil;
+                       if (!v) return Rice::Object(Qnil);
+                       return Rice::Object(String(v.value()));
                      })
       .define_method("get_bool",
                      [](const zvec::Doc &d,
                         const std::string &f) -> Rice::Object {
                        auto v = d.get<bool>(f);
-                       return v ? Rice::Object(v.value() ? Qtrue : Qfalse)
-                                : Qnil;
+                       if (!v) return Rice::Object(Qnil);
+                       return Rice::Object(v.value() ? Qtrue : Qfalse);
                      })
       .define_method("get_int32",
                      [](const zvec::Doc &d,
                         const std::string &f) -> Rice::Object {
                        auto v = d.get<int32_t>(f);
-                       return v ? Rice::Object(INT2NUM(v.value())) : Qnil;
+                       if (!v) return Rice::Object(Qnil);
+                       return Rice::Object(INT2NUM(v.value()));
                      })
       .define_method("get_int64",
                      [](const zvec::Doc &d,
                         const std::string &f) -> Rice::Object {
                        auto v = d.get<int64_t>(f);
-                       return v ? Rice::Object(LONG2NUM(v.value())) : Qnil;
+                       if (!v) return Rice::Object(Qnil);
+                       return Rice::Object(LONG2NUM(v.value()));
                      })
       .define_method("get_float",
                      [](const zvec::Doc &d,
                         const std::string &f) -> Rice::Object {
                        auto v = d.get<float>(f);
-                       return v ? Rice::Object(rb_float_new(v.value())) : Qnil;
+                       if (!v) return Rice::Object(Qnil);
+                       return Rice::Object(rb_float_new(v.value()));
                      })
       .define_method("get_double",
                      [](const zvec::Doc &d,
                         const std::string &f) -> Rice::Object {
                        auto v = d.get<double>(f);
-                       return v ? Rice::Object(rb_float_new(v.value())) : Qnil;
+                       if (!v) return Rice::Object(Qnil);
+                       return Rice::Object(rb_float_new(v.value()));
                      })
       .define_method("get_float_vector",
                      [](const zvec::Doc &d,
                         const std::string &f) -> Rice::Object {
                        auto v = d.get<std::vector<float>>(f);
-                       if (!v) return Qnil;
+                       if (!v) return Rice::Object(Qnil);
                        Array arr;
-                       for (float x : v.value()) arr.push(rb_float_new(x));
+                       for (float x : v.value()) arr.push(Rice::Object(rb_float_new(x)));
                        return arr;
                      })
       .define_method("get_double_vector",
                      [](const zvec::Doc &d,
                         const std::string &f) -> Rice::Object {
                        auto v = d.get<std::vector<double>>(f);
-                       if (!v) return Qnil;
+                       if (!v) return Rice::Object(Qnil);
                        Array arr;
-                       for (double x : v.value()) arr.push(rb_float_new(x));
+                       for (double x : v.value()) arr.push(Rice::Object(rb_float_new(x)));
                        return arr;
                      })
       .define_method("get_string_array",
                      [](const zvec::Doc &d,
                         const std::string &f) -> Rice::Object {
                        auto v = d.get<std::vector<std::string>>(f);
-                       if (!v) return Qnil;
+                       if (!v) return Rice::Object(Qnil);
                        Array arr;
-                       for (auto &s : v.value()) arr.push(String(s));
+                       for (auto &s : v.value()) arr.push(Rice::Object(String(s)));
                        return arr;
                      });
 
@@ -474,10 +510,20 @@ extern "C" void Init_zvec_ext() {
                      [](zvec::VectorQuery &q, std::vector<std::string> fields) {
                        q.output_fields_ = std::move(fields);
                      })
-      .define_method("set_query_params",
+      .define_method("set_hnsw_query_params",
                      [](zvec::VectorQuery &q,
-                        zvec::QueryParams::Ptr params) {
-                       q.query_params_ = params;
+                        const zvec::HnswQueryParams &params) {
+                       q.query_params_ = std::make_shared<zvec::HnswQueryParams>(params);
+                     })
+      .define_method("set_ivf_query_params",
+                     [](zvec::VectorQuery &q,
+                        const zvec::IVFQueryParams &params) {
+                       q.query_params_ = std::make_shared<zvec::IVFQueryParams>(params);
+                     })
+      .define_method("set_flat_query_params",
+                     [](zvec::VectorQuery &q,
+                        const zvec::FlatQueryParams &params) {
+                       q.query_params_ = std::make_shared<zvec::FlatQueryParams>(params);
                      });
 
   // ---- Collection ----
@@ -525,8 +571,9 @@ extern "C" void Init_zvec_ext() {
                      [](zvec::Collection &c) { throw_if_error(c.Flush()); })
       .define_method("create_index",
                      [](zvec::Collection &c, const std::string &col,
-                        zvec::IndexParams::Ptr params) {
-                       throw_if_error(c.CreateIndex(col, params));
+                        const zvec::IndexParams &params) {
+                       auto ptr = params.clone();
+                       throw_if_error(c.CreateIndex(col, ptr));
                      })
       .define_method("drop_index",
                      [](zvec::Collection &c, const std::string &col) {
@@ -537,43 +584,188 @@ extern "C" void Init_zvec_ext() {
                        throw_if_error(c.Optimize());
                      })
 
-      // DML
+      // DML — returns array of [ok, message] pairs
       .define_method("insert",
                      [](zvec::Collection &c, std::vector<zvec::Doc> docs) {
-                       return unwrap(c.Insert(docs));
+                       auto statuses = unwrap(c.Insert(docs));
+                       Array arr;
+                       for (auto &s : statuses) {
+                         Array pair;
+                         pair.push(Rice::Object(s.ok() ? Qtrue : Qfalse));
+                         pair.push(Rice::Object(String(s.message())));
+                         arr.push(pair);
+                       }
+                       return arr;
                      })
       .define_method("upsert",
                      [](zvec::Collection &c, std::vector<zvec::Doc> docs) {
-                       return unwrap(c.Upsert(docs));
+                       auto statuses = unwrap(c.Upsert(docs));
+                       Array arr;
+                       for (auto &s : statuses) {
+                         Array pair;
+                         pair.push(Rice::Object(s.ok() ? Qtrue : Qfalse));
+                         pair.push(Rice::Object(String(s.message())));
+                         arr.push(pair);
+                       }
+                       return arr;
                      })
       .define_method("update",
                      [](zvec::Collection &c, std::vector<zvec::Doc> docs) {
-                       return unwrap(c.Update(docs));
+                       auto statuses = unwrap(c.Update(docs));
+                       Array arr;
+                       for (auto &s : statuses) {
+                         Array pair;
+                         pair.push(Rice::Object(s.ok() ? Qtrue : Qfalse));
+                         pair.push(Rice::Object(String(s.message())));
+                         arr.push(pair);
+                       }
+                       return arr;
                      })
       .define_method("delete_pks",
                      [](zvec::Collection &c,
                         std::vector<std::string> pks) {
-                       return unwrap(c.Delete(pks));
+                       auto statuses = unwrap(c.Delete(pks));
+                       Array arr;
+                       for (auto &s : statuses) {
+                         Array pair;
+                         pair.push(Rice::Object(s.ok() ? Qtrue : Qfalse));
+                         pair.push(Rice::Object(String(s.message())));
+                         arr.push(pair);
+                       }
+                       return arr;
                      })
       .define_method("delete_by_filter",
                      [](zvec::Collection &c, const std::string &filter) {
                        throw_if_error(c.DeleteByFilter(filter));
                      })
 
-      // DQL
+      // DQL — query returns Ruby Array of ext Doc objects
       .define_method("query",
-                     [](const zvec::Collection &c,
+                     [](zvec::Collection &c,
                         const zvec::VectorQuery &q) {
-                       return unwrap(c.Query(q));
+                       auto docs = unwrap(c.Query(q));
+                       // Store result docs in a static-lifetime vector to keep
+                       // shared_ptrs alive while Ruby holds references
+                       Array arr;
+                       for (size_t i = 0; i < docs.size(); ++i) {
+                         // Build a hash with pk, score, and all fields
+                         Hash h;
+                         auto &doc = *docs[i];
+                         h[Rice::Object(String("pk"))] =
+                             Rice::Object(String(doc.pk()));
+                         h[Rice::Object(String("score"))] =
+                             Rice::Object(rb_float_new(doc.score()));
+                         h[Rice::Object(String("doc_id"))] =
+                             Rice::Object(ULONG2NUM(doc.doc_id()));
+                         for (auto &fname : doc.field_names()) {
+                           // Try each type for the field
+                           auto sv = doc.get<std::string>(fname);
+                           if (sv) {
+                             h[Rice::Object(String(fname))] =
+                                 Rice::Object(String(sv.value()));
+                             continue;
+                           }
+                           auto bv = doc.get<bool>(fname);
+                           if (bv) {
+                             h[Rice::Object(String(fname))] =
+                                 Rice::Object(bv.value() ? Qtrue : Qfalse);
+                             continue;
+                           }
+                           auto iv = doc.get<int32_t>(fname);
+                           if (iv) {
+                             h[Rice::Object(String(fname))] =
+                                 Rice::Object(INT2NUM(iv.value()));
+                             continue;
+                           }
+                           auto lv = doc.get<int64_t>(fname);
+                           if (lv) {
+                             h[Rice::Object(String(fname))] =
+                                 Rice::Object(LONG2NUM(lv.value()));
+                             continue;
+                           }
+                           auto fv = doc.get<float>(fname);
+                           if (fv) {
+                             h[Rice::Object(String(fname))] =
+                                 Rice::Object(rb_float_new(fv.value()));
+                             continue;
+                           }
+                           auto dv = doc.get<double>(fname);
+                           if (dv) {
+                             h[Rice::Object(String(fname))] =
+                                 Rice::Object(rb_float_new(dv.value()));
+                             continue;
+                           }
+                           auto vfv = doc.get<std::vector<float>>(fname);
+                           if (vfv) {
+                             Array va;
+                             for (float x : vfv.value())
+                               va.push(Rice::Object(rb_float_new(x)));
+                             h[Rice::Object(String(fname))] = va;
+                             continue;
+                           }
+                         }
+                         arr.push(Rice::Object(h));
+                       }
+                       return arr;
                      })
+      // Fetch — returns Hash of pk => ext Doc
       .define_method("fetch",
                      [](const zvec::Collection &c,
                         std::vector<std::string> pks) {
                        auto result = unwrap(c.Fetch(pks));
-                       Hash h;
-                       for (auto &[k, v] : result) {
-                         h[String(k)] = v;
+                       // Same issue with Doc push, return as hash of hashes
+                       Hash outer;
+                       for (auto &[k, ptr] : result) {
+                         Hash h;
+                         auto &doc = *ptr;
+                         for (auto &fname : doc.field_names()) {
+                           auto sv = doc.get<std::string>(fname);
+                           if (sv) {
+                             h[Rice::Object(String(fname))] =
+                                 Rice::Object(String(sv.value()));
+                             continue;
+                           }
+                           auto bv = doc.get<bool>(fname);
+                           if (bv) {
+                             h[Rice::Object(String(fname))] =
+                                 Rice::Object(bv.value() ? Qtrue : Qfalse);
+                             continue;
+                           }
+                           auto iv = doc.get<int32_t>(fname);
+                           if (iv) {
+                             h[Rice::Object(String(fname))] =
+                                 Rice::Object(INT2NUM(iv.value()));
+                             continue;
+                           }
+                           auto lv = doc.get<int64_t>(fname);
+                           if (lv) {
+                             h[Rice::Object(String(fname))] =
+                                 Rice::Object(LONG2NUM(lv.value()));
+                             continue;
+                           }
+                           auto fv = doc.get<float>(fname);
+                           if (fv) {
+                             h[Rice::Object(String(fname))] =
+                                 Rice::Object(rb_float_new(fv.value()));
+                             continue;
+                           }
+                           auto dv = doc.get<double>(fname);
+                           if (dv) {
+                             h[Rice::Object(String(fname))] =
+                                 Rice::Object(rb_float_new(dv.value()));
+                             continue;
+                           }
+                           auto vfv = doc.get<std::vector<float>>(fname);
+                           if (vfv) {
+                             Array va;
+                             for (float x : vfv.value())
+                               va.push(Rice::Object(rb_float_new(x)));
+                             h[Rice::Object(String(fname))] = va;
+                             continue;
+                           }
+                         }
+                         outer[Rice::Object(String(k))] = h;
                        }
-                       return h;
+                       return outer;
                      });
 }

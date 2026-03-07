@@ -28,9 +28,12 @@ module Zvec
                       else raise ArgumentError, "Unknown metric: #{metric}"
                       end
 
+        cf = @content_field
+        vf = @vector_field
+        dim = dimension
         schema = Zvec::Schema.new("ruby_llm_store") do
-          string @content_field, nullable: true
-          vector @vector_field, dimension: dimension,
+          string cf, nullable: true
+          vector vf, dimension: dim,
                  index: Zvec::Ext::HnswIndexParams.new(metric_type)
         end
 

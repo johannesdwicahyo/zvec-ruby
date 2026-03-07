@@ -1,0 +1,135 @@
+name: Precompile Native Gems
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  native-linux:
+    name: "Native gem (${{ matrix.platform }})"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [x86_64-linux, aarch64-linux]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+
+      - name: Install rake-compiler-dock
+        run: gem install rake-compiler-dock
+
+      - name: Build native gem via rake-compiler-dock
+        run: |
+          rake-compiler-dock \
+            --platform ${{ matrix.platform }} \
+            -- bash -c "
+              set -e
+
+              # Build zvec from source inside the container
+              git clone --depth 1 https://github.com/alibaba/zvec /tmp/zvec
+              cd /tmp/zvec && mkdir build && cd build
+              cmake .. -DCMAKE_BUILD_TYPE=Release
+              make -j\$(nproc)
+
+              # Build the native gem
+              cd /payload
+              export ZVEC_DIR=/tmp/zvec
+              bundle install
+              rake native:${{ matrix.platform }} gem \
+                RUBY_CC_VERSION=3.1.0:3.2.0:3.3.0:3.4.0
+            "
+
+      - name: Upload gems
+        uses: actions/upload-artifact@v4
+        with:
+          name: gem-${{ matrix.platform }}
+          path: pkg/*-${{ matrix.platform }}.gem
+
+  native-macos:
+    name: "Native gem (${{ matrix.platform }})"
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: arm64-darwin
+            runner: macos-14
+          - platform: x86_64-darwin
+            runner: macos-13
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+
+      - name: Install build tools
+        run: brew install cmake
+
+      - name: Build zvec from source
+        run: |
+          git clone --depth 1 https://github.com/alibaba/zvec /tmp/zvec
+          cd /tmp/zvec && mkdir build && cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release
+          make -j$(sysctl -n hw.ncpu)
+
+      - name: Compile extension and build native gem
+        run: |
+          export ZVEC_DIR=/tmp/zvec
+          bundle install
+          bundle exec rake compile
+          # Build a platform-specific gem with precompiled extension
+          ruby script/package_native_gem.rb ${{ matrix.platform }}
+        env:
+          ZVEC_DIR: /tmp/zvec
+
+      - name: Upload gems
+        uses: actions/upload-artifact@v4
+        with:
+          name: gem-${{ matrix.platform }}
+          path: pkg/*.gem
+
+  source-gem:
+    name: Source gem
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+      - run: gem build zvec.gemspec
+      - name: Upload gem
+        uses: actions/upload-artifact@v4
+        with:
+          name: gem-source
+          path: "*.gem"
+
+  release:
+    name: Publish gems
+    needs: [native-linux, native-macos, source-gem]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: gems
+          merge-multiple: true
+
+      - name: List gems
+        run: ls -la gems/
+
+      - name: Publish to RubyGems
+        env:
+          GEM_HOST_API_KEY: ${{ secrets.RUBYGEMS_API_KEY }}
+        run: |
+          for gem in gems/*.gem; do
+            echo "Publishing $gem..."
+            gem push "$gem" || true
+          done

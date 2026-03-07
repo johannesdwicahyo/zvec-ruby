@@ -18,7 +18,7 @@ module Zvec
     end
 
     def score
-      @ext_doc.score
+      @score || @ext_doc.score
     end
 
     def [](field_name)
