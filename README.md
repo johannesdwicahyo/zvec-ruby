@@ -15,11 +15,11 @@ Precompiled native gems are available for:
 
 ```ruby
 # Gemfile
-gem "zvec"
+gem "zvec-ruby"
 ```
 
 ```bash
-gem install zvec
+gem install zvec-ruby
 ```
 
 No compiler or build tools needed — the gem ships with the native extension and all zvec dependencies statically linked.
@@ -36,7 +36,7 @@ cmake .. -DCMAKE_BUILD_TYPE=Release
 make -j$(nproc)
 
 # 2. Install the gem with ZVEC_DIR pointing to the build
-ZVEC_DIR=/tmp/zvec gem install zvec
+ZVEC_DIR=/tmp/zvec gem install zvec-ruby
 ```
 
 Or using the included helper script:
