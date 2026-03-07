@@ -1,7 +1,7 @@
 require_relative "lib/zvec/version"
 
 Gem::Specification.new do |spec|
-  spec.name          = "zvec"
+  spec.name          = "zvec-ruby"
   spec.version       = Zvec::VERSION
   spec.authors       = ["Johannes Dwi Cahyo"]
   spec.summary       = "Ruby bindings for zvec vector database"
