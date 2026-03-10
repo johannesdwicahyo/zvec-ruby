@@ -63,7 +63,7 @@ module Zvec
 
         def zvec_remove_embedding!
           self.class.zvec_store.delete(id.to_s)
-        rescue => e
+        rescue
           # Silently ignore if document doesn't exist
         end
 

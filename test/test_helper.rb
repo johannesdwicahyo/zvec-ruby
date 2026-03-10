@@ -14,6 +14,7 @@ rescue LoadError
   # Minimal stubs so pure-Ruby logic can be tested without the compiled extension.
   module Zvec
     class Error < StandardError; end
+    class DimensionError < Error; end
 
     module Ext
       # Stub enums as simple modules with constants
@@ -68,9 +69,9 @@ rescue LoadError
         def get_int64(f); @fields[f].is_a?(Integer) ? @fields[f] : nil; end
         def get_float(f); @fields[f].is_a?(Float) ? @fields[f] : nil; end
         def get_double(f); @fields[f].is_a?(Float) ? @fields[f] : nil; end
-        def get_float_vector(f); @fields[f].is_a?(Array) && @fields[f].first.is_a?(Float) ? @fields[f] : nil; end
+        def get_float_vector(f); @fields[f].is_a?(Array) && (@fields[f].empty? || @fields[f].first.is_a?(Float)) ? @fields[f] : nil; end
         def get_double_vector(f); get_float_vector(f); end
-        def get_string_array(f); @fields[f].is_a?(Array) && @fields[f].first.is_a?(String) ? @fields[f] : nil; end
+        def get_string_array(f); @fields[f].is_a?(Array) && !@fields[f].empty? && @fields[f].first.is_a?(String) ? @fields[f] : nil; end
         def to_s; "[pk:#{@pk}, score:#{@score}, fields:#{@fields.size}]"; end
       end
 
@@ -90,7 +91,6 @@ rescue LoadError
         def has_field?(n); @fields.key?(n); end
         def field_names; @fields.keys; end
         def all_field_names; @fields.keys; end
-        alias_method :field_names, :all_field_names
         def fields; @fields.values; end
         def vector_fields; @fields.values.select(&:vector_field?); end
         def forward_fields; @fields.values.reject(&:vector_field?); end
@@ -118,6 +118,15 @@ rescue LoadError
         def initialize(ef: 200); @ef = ef; end
       end
 
+      class IVFQueryParams
+        attr_reader :nprobe
+        def initialize(nprobe: 10); @nprobe = nprobe; end
+      end
+
+      class FlatQueryParams
+        def initialize; end
+      end
+
       class CollectionOptions
         attr_accessor :read_only, :enable_mmap, :max_buffer_size
         def initialize; @read_only = false; @enable_mmap = true; @max_buffer_size = 64 * 1024 * 1024; end
@@ -131,6 +140,9 @@ rescue LoadError
         def set_query_vector(arr); @query_vector = arr; end
         def set_output_fields(f); @output_fields = f; end
         def set_query_params(p); @query_params = p; end
+        def set_hnsw_query_params(p); @query_params = p; end
+        def set_ivf_query_params(p); @query_params = p; end
+        def set_flat_query_params(p); @query_params = p; end
         alias_method :include_vector?, :include_vector
       end
 
@@ -147,6 +159,83 @@ rescue LoadError
         def message; @msg; end
         def to_s; @ok ? "OK" : @msg; end
       end
+
+      # Stub Collection for pure-Ruby testing of the wrapper layer
+      class Collection
+        attr_reader :path_value, :schema_value, :docs
+
+        def initialize
+          @docs = {}
+          @stats = CollectionStats.new
+          @path_value = ""
+        end
+
+        def self.create_and_open(path, ext_schema, opts)
+          c = new
+          c.instance_variable_set(:@path_value, path)
+          c.instance_variable_set(:@schema_value, ext_schema)
+          c
+        end
+
+        def self.open(path, opts)
+          c = new
+          c.instance_variable_set(:@path_value, path)
+          c
+        end
+
+        def path; @path_value; end
+        def schema; @schema_value; end
+
+        def stats
+          s = CollectionStats.new
+          s.doc_count = @docs.size
+          s
+        end
+
+        def insert(ext_docs)
+          ext_docs.each { |d| @docs[d.pk] = d }
+          ext_docs.map { |_| [true, ""] }
+        end
+
+        def upsert(ext_docs)
+          ext_docs.each { |d| @docs[d.pk] = d }
+          ext_docs.map { |_| [true, ""] }
+        end
+
+        def update(ext_docs)
+          ext_docs.each { |d| @docs[d.pk] = d if @docs.key?(d.pk) }
+          ext_docs.map { |_| [true, ""] }
+        end
+
+        def delete_pks(pks)
+          pks.each { |pk| @docs.delete(pk) }
+          pks.map { |_| [true, ""] }
+        end
+
+        def delete_by_filter(filter)
+          # no-op in stub
+        end
+
+        def query(vq)
+          @docs.values.first(vq.topk).map do |d|
+            h = { "pk" => d.pk, "score" => 0.95 }
+            d.field_names.each { |f| h[f] = d.get_string(f) || d.get_int64(f) || d.get_float(f) || d.get_double(f) || d.get_bool(f) || d.get_float_vector(f) || d.get_string_array(f) }
+            h
+          end
+        end
+
+        def fetch(pks)
+          result = {}
+          pks.each { |pk| result[pk] = @docs[pk] if @docs.key?(pk) }
+          result
+        end
+
+        def create_index(field_name, index_params); end
+        def drop_index(field_name); end
+        def optimize; end
+        def flush; end
+        def destroy; end
+      end
     end
 
     require_relative "../lib/zvec/version"
@@ -154,6 +243,7 @@ rescue LoadError
     require_relative "../lib/zvec/schema"
     require_relative "../lib/zvec/doc"
     require_relative "../lib/zvec/query"
+    require_relative "../lib/zvec/collection"
 
     include DataTypes
   end

@@ -17,6 +17,7 @@ require_relative "zvec/collection"
 
 module Zvec
   class Error < StandardError; end
+  class DimensionError < Error; end
 
   include DataTypes
 end

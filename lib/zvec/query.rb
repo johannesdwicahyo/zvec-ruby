@@ -4,6 +4,18 @@ module Zvec
 
     def initialize(field_name:, vector:, topk: 10, filter: nil,
                    include_vector: false, output_fields: nil, query_params: nil)
+      raise ArgumentError, "field_name must be a non-empty string" if field_name.nil? || field_name.to_s.strip.empty?
+      raise ArgumentError, "vector must be a non-empty Array" unless vector.is_a?(Array) && !vector.empty?
+      raise ArgumentError, "topk must be a positive integer" unless topk.is_a?(Integer) && topk > 0
+
+      # Validate all vector elements are numeric
+      vector.each_with_index do |v, i|
+        unless v.is_a?(Numeric)
+          raise ArgumentError,
+            "Query vector contains non-numeric element at index #{i}: #{v.inspect}"
+        end
+      end
+
       @ext_query = Ext::VectorQuery.new
       @ext_query.field_name = field_name.to_s
       @ext_query.topk = topk

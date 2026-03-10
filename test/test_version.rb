@@ -14,6 +14,6 @@ class TestVersion < Minitest::Test
   end
 
   def test_version_value
-    assert_equal "0.1.0", Zvec::VERSION
+    assert_equal "0.1.1", Zvec::VERSION
   end
 end

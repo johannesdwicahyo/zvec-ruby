@@ -31,28 +31,49 @@ module Zvec
 
     def set(field_name, value)
       field_name = field_name.to_s
+      raise ArgumentError, "Field name must be a non-empty string" if field_name.strip.empty?
+
       return @ext_doc.set_null(field_name) if value.nil?
 
       if @schema
         type = @schema.field_type(field_name)
         if type
+          coerced = DataTypes.coerce_value(value, type, field_name: field_name)
           setter = DataTypes::SETTER_FOR[type]
-          return @ext_doc.send(setter, field_name, value) if setter
+          if setter
+            # Validate vector dimension if schema has dimension info
+            if DataTypes::VECTOR_TYPES.include?(type) && coerced.is_a?(Array)
+              expected_dim = @schema.field_dimension(field_name)
+              if expected_dim && !coerced.empty? && coerced.size != expected_dim
+                raise DimensionError,
+                  "Vector dimension mismatch for field '#{field_name}': " \
+                  "expected #{expected_dim}, got #{coerced.size}"
+              end
+            end
+            return @ext_doc.send(setter, field_name, coerced)
+          end
         end
       end
 
-      # Auto-detect type
+      # Auto-detect type (schema-less mode)
       case value
-      when String  then @ext_doc.set_string(field_name, value)
-      when Integer then @ext_doc.set_int64(field_name, value)
-      when Float   then @ext_doc.set_double(field_name, value)
+      when String                then @ext_doc.set_string(field_name, value)
+      when Integer               then @ext_doc.set_int64(field_name, value)
+      when Float                 then @ext_doc.set_double(field_name, value)
       when TrueClass, FalseClass then @ext_doc.set_bool(field_name, value)
       when Array
-        if value.empty? || value.first.is_a?(Float) || value.first.is_a?(Integer)
-          @ext_doc.set_float_vector(field_name, value.map(&:to_f))
-        elsif value.first.is_a?(String)
-          @ext_doc.set_string_array(field_name, value)
+        detected = DataTypes.detect_type(value)
+        case detected
+        when Ext::DataType::ARRAY_STRING
+          @ext_doc.set_string_array(field_name, value.map { |v| v.nil? ? "" : v.to_s })
+        else
+          # Default: treat as float vector
+          coerced = value.map { |v| v.nil? ? 0.0 : v.to_f }
+          @ext_doc.set_float_vector(field_name, coerced)
         end
+      else
+        raise ArgumentError,
+          "Unsupported value type #{value.class} for field '#{field_name}'"
       end
     end
 
