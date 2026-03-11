@@ -5,7 +5,10 @@ module Zvec
   module ActiveRecord
     # Rails concern that adds vector search capabilities to ActiveRecord models.
     #
-    # Usage:
+    # When included in a model, call +vectorize+ to configure which text field
+    # to embed, the vector dimension, and the embedding function.
+    #
+    # @example Basic usage
     #   class Article < ApplicationRecord
     #     include Zvec::ActiveRecord::Vectorize
     #
@@ -15,13 +18,30 @@ module Zvec
     #       embed_with: ->(text) { OpenAI.embed(text) }
     #   end
     #
-    #   Article.vector_search([0.1, 0.2, ...], top_k: 5)
-    #   article.update_embedding!
+    # @example Searching
+    #   Article.vector_search("Ruby programming", top_k: 5)
+    #   Article.vector_search([0.1, 0.2, ...], top_k: 5, embed: false)
+    #
+    # @example Instance methods
+    #   article.zvec_update_embedding!   # re-embed and store
+    #   article.zvec_remove_embedding!   # remove from vector store
+    #   article.zvec_embedding           # fetch stored embedding doc
     #
     module Vectorize
       extend ActiveSupport::Concern
 
       class_methods do
+        # Configure vector search for this model.
+        #
+        # @param field [String, Symbol] the text field to embed
+        # @param dimensions [Integer] the vector dimension
+        # @param prefix [String, nil] collection prefix (defaults to table_name)
+        # @param embed_with [Proc, nil] a callable that takes text and returns
+        #   a vector Array (e.g., +-> (text) { OpenAI.embed(text) }+)
+        # @param metric [Symbol] similarity metric (+:cosine+, +:l2+, or +:ip+)
+        # @param zvec_path [String, nil] path for the zvec collection
+        #   (defaults to +tmp/zvec/<prefix>+)
+        # @return [void]
         def vectorize(field, dimensions:, prefix: nil, embed_with: nil,
                       metric: :cosine, zvec_path: nil)
           prefix ||= table_name
@@ -46,7 +66,12 @@ module Zvec
         end
       end
 
+      # Instance methods mixed into the model.
       module InstanceMethods
+        # Re-embed the configured text field and store the embedding.
+        #
+        # @return [void]
+        # @raise [Zvec::Error] if no +embed_with+ function is configured
         def zvec_update_embedding!
           cfg = self.class.zvec_config
           text = send(cfg[:field])
@@ -61,19 +86,29 @@ module Zvec
           store.flush
         end
 
+        # Remove this record's embedding from the vector store.
+        #
+        # @return [void]
         def zvec_remove_embedding!
           self.class.zvec_store.delete(id.to_s)
         rescue
           # Silently ignore if document doesn't exist
         end
 
+        # Fetch this record's stored embedding document.
+        #
+        # @return [Zvec::Doc, nil] the stored document, or nil if not found
         def zvec_embedding
           result = self.class.zvec_store.fetch(id.to_s)
           result[id.to_s]
         end
       end
 
+      # Class methods mixed into the model.
       module SearchMethods
+        # Access the shared {Zvec::RubyLLM::Store} instance for this model.
+        #
+        # @return [Zvec::RubyLLM::Store]
         def zvec_store
           @zvec_store ||= begin
             cfg = zvec_config
@@ -85,6 +120,18 @@ module Zvec
           end
         end
 
+        # Search for records by vector similarity.
+        #
+        # When +query+ is a String and +embed+ is true, the configured
+        # +embed_with+ function is called to convert it to a vector first.
+        #
+        # @param query [Array<Numeric>, String] query vector or text to embed
+        # @param top_k [Integer] maximum number of results (default: 10)
+        # @param embed [Boolean] whether to embed a String query (default: true)
+        # @return [Array<ActiveRecord::Base>] matching records, each with a
+        #   +zvec_score+ singleton method returning the similarity score
+        # @raise [ArgumentError] if query is a String but no +embed_with+ is
+        #   configured
         def vector_search(query, top_k: 10, embed: true)
           cfg = zvec_config
 

@@ -15,6 +15,9 @@ rescue LoadError
   module Zvec
     class Error < StandardError; end
     class DimensionError < Error; end
+    class SchemaError < Error; end
+    class QueryError < Error; end
+    class CollectionError < Error; end
 
     module Ext
       # Stub enums as simple modules with constants
@@ -168,6 +171,7 @@ rescue LoadError
           @docs = {}
           @stats = CollectionStats.new
           @path_value = ""
+          @closed = false
         end
 
         def self.create_and_open(path, ext_schema, opts)
@@ -185,6 +189,11 @@ rescue LoadError
 
         def path; @path_value; end
         def schema; @schema_value; end
+        def closed?; @closed; end
+
+        def close
+          @closed = true
+        end
 
         def stats
           s = CollectionStats.new

@@ -16,20 +16,20 @@ class TestValidation < Minitest::Test
   # --- Schema validation ---
 
   def test_schema_rejects_nil_name
-    assert_raises(ArgumentError) { Zvec::Schema.new(nil) }
+    assert_raises(Zvec::SchemaError) { Zvec::Schema.new(nil) }
   end
 
   def test_schema_rejects_empty_name
-    assert_raises(ArgumentError) { Zvec::Schema.new("") }
+    assert_raises(Zvec::SchemaError) { Zvec::Schema.new("") }
   end
 
   def test_schema_rejects_blank_name
-    assert_raises(ArgumentError) { Zvec::Schema.new("   ") }
+    assert_raises(Zvec::SchemaError) { Zvec::Schema.new("   ") }
   end
 
   def test_schema_field_rejects_empty_name
     schema = Zvec::Schema.new("test")
-    assert_raises(ArgumentError) { schema.field("", Zvec::DataTypes::STRING) }
+    assert_raises(Zvec::SchemaError) { schema.field("", Zvec::DataTypes::STRING) }
   end
 
   def test_schema_vector_rejects_zero_dimension
@@ -123,43 +123,43 @@ class TestValidation < Minitest::Test
   # --- VectorQuery validation ---
 
   def test_query_rejects_nil_field_name
-    assert_raises(ArgumentError) do
+    assert_raises(Zvec::QueryError) do
       Zvec::VectorQuery.new(field_name: nil, vector: [1.0])
     end
   end
 
   def test_query_rejects_empty_field_name
-    assert_raises(ArgumentError) do
+    assert_raises(Zvec::QueryError) do
       Zvec::VectorQuery.new(field_name: "", vector: [1.0])
     end
   end
 
   def test_query_rejects_empty_vector
-    assert_raises(ArgumentError) do
+    assert_raises(Zvec::QueryError) do
       Zvec::VectorQuery.new(field_name: "vec", vector: [])
     end
   end
 
   def test_query_rejects_non_array_vector
-    assert_raises(ArgumentError) do
+    assert_raises(Zvec::QueryError) do
       Zvec::VectorQuery.new(field_name: "vec", vector: "not an array")
     end
   end
 
   def test_query_rejects_non_numeric_vector_elements
-    assert_raises(ArgumentError) do
+    assert_raises(Zvec::QueryError) do
       Zvec::VectorQuery.new(field_name: "vec", vector: [1.0, "bad", 3.0])
     end
   end
 
   def test_query_rejects_zero_topk
-    assert_raises(ArgumentError) do
+    assert_raises(Zvec::QueryError) do
       Zvec::VectorQuery.new(field_name: "vec", vector: [1.0], topk: 0)
     end
   end
 
   def test_query_rejects_negative_topk
-    assert_raises(ArgumentError) do
+    assert_raises(Zvec::QueryError) do
       Zvec::VectorQuery.new(field_name: "vec", vector: [1.0], topk: -1)
     end
   end

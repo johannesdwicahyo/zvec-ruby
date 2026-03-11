@@ -40,6 +40,9 @@ Rake::TestTask.new(:test_pure) do |t|
     "test/test_schema.rb",
     "test/test_doc.rb",
     "test/test_query.rb",
+    "test/test_type_detection.rb",
+    "test/test_validation.rb",
+    "test/test_edge_cases.rb",
     "test/test_active_record.rb",
   ]
   t.warning = true
