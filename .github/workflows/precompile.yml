@@ -5,6 +5,9 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+env:
+  ZVEC_REF: "f602ed30ce62efe3e759bb9308260119c488c1bc"  # must match Rakefile ZVEC_REF
+
 jobs:
   native-linux:
     name: "Native gem (${{ matrix.platform }})"
@@ -32,8 +35,10 @@ jobs:
               set -e
 
               # Build zvec from source inside the container
-              git clone --depth 1 https://github.com/alibaba/zvec /tmp/zvec
-              cd /tmp/zvec && mkdir build && cd build
+              git clone https://github.com/alibaba/zvec /tmp/zvec
+              cd /tmp/zvec
+              git checkout ${{ env.ZVEC_REF }}
+              mkdir build && cd build
               cmake .. -DCMAKE_BUILD_TYPE=Release
               make -j\$(nproc)
 
@@ -75,8 +80,10 @@ jobs:
 
       - name: Build zvec from source
         run: |
-          git clone --depth 1 https://github.com/alibaba/zvec /tmp/zvec
-          cd /tmp/zvec && mkdir build && cd build
+          git clone https://github.com/alibaba/zvec /tmp/zvec
+          cd /tmp/zvec
+          git checkout ${ZVEC_REF}
+          mkdir build && cd build
           cmake .. -DCMAKE_BUILD_TYPE=Release
           make -j$(sysctl -n hw.ncpu)
 
