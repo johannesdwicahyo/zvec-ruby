@@ -100,6 +100,16 @@ Before the first production release:
 - **Gem size.** Statically linking zvec + arrow + rocksdb may exceed the rubygems.org default 100 MB gem size limit. Mitigations: strip symbols (`strip --strip-unneeded`) in the Rakefile before packaging, or request a size limit increase from RubyGems support.
 - **`ZVEC_REF` bumps are manual by design.** Document this in `CHANGELOG.md` and in a short section of `README.md` so future releases don't silently drift.
 
+## Addendum: actual starting state (discovered 2026-04-17)
+
+The repo already contains most of the scaffolding assumed by this design. Two adjustments to the design, based on what's in tree:
+
+1. **Darwin builds use native macOS runners** (`macos-13` for x86_64-darwin, `macos-14` for arm64-darwin) in the existing `.github/workflows/precompile.yml`, not `rake-compiler-dock` cross-compile from Linux. This sidesteps the "Darwin cross-compile risk" entirely and is kept.
+
+2. **Darwin gems are single-Ruby.** `script/package_native_gem.rb` bakes the runner's Ruby minor version (3.3) into the gem path, so Darwin platform gems only load under Ruby 3.3. Accepted for now; documented in `README.md`. Linux gems remain fat (3.1–3.4) via `rake-compiler-dock`. Revisit if Darwin users report breakage.
+
+Implementation work is the delta from the current workflow to the design goals: pin `ZVEC_REF`, fix silent `gem push` failures, document the Darwin Ruby-version constraint, and verify end-to-end before first tagged release.
+
 ## Out of scope
 
 - Windows platform gem (`x64-mingw-ucrt`). Not currently needed.
