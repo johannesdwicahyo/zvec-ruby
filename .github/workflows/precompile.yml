@@ -136,7 +136,14 @@ jobs:
         env:
           GEM_HOST_API_KEY: ${{ secrets.RUBYGEMS_API_KEY }}
         run: |
-          for gem in gems/*.gem; do
+          set -euo pipefail
+          shopt -s nullglob
+          gems=(gems/*.gem)
+          if [ ${#gems[@]} -eq 0 ]; then
+            echo "No gems found to publish" >&2
+            exit 1
+          fi
+          for gem in "${gems[@]}"; do
             echo "Publishing $gem..."
-            gem push "$gem" || true
+            gem push "$gem"
           done
