@@ -4,46 +4,25 @@ Ruby bindings for [zvec](https://github.com/alibaba/zvec), a high-performance C+
 
 ## Installation
 
-### Precompiled (recommended)
-
-Precompiled native gems are available for:
-
-| Platform | Architectures |
-|---|---|
-| Linux | x86_64, aarch64 |
-| macOS | x86_64 (Intel), arm64 (Apple Silicon) |
-
 ```ruby
 # Gemfile
 gem "zvec-ruby"
 ```
 
-```bash
-gem install zvec-ruby
-```
+### Precompiled platform support
 
-No compiler or build tools needed — the gem ships with the native extension and all zvec dependencies statically linked.
+Starting with v0.2.1, precompiled native gems are published for supported platforms. No C++ toolchain is required on those platforms.
 
-### From source
+| Platform        | Ruby versions      | Notes                          |
+| --------------- | ------------------ | ------------------------------ |
+| `x86_64-linux`  | 3.1, 3.2, 3.3, 3.4 | Built via `rake-compiler-dock` |
+| `aarch64-linux` | 3.1, 3.2, 3.3, 3.4 | Built via `rake-compiler-dock` |
+| `arm64-darwin`  | **3.3 only**       | Built on macOS runner          |
+| `x86_64-darwin` | **3.3 only**       | Built on macOS runner          |
 
-If no precompiled gem is available for your platform, you'll need to build zvec first:
-
-```bash
-# 1. Build zvec from source
-git clone --depth 1 https://github.com/alibaba/zvec /tmp/zvec
-cd /tmp/zvec && mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-make -j$(nproc)
-
-# 2. Install the gem with ZVEC_DIR pointing to the build
-ZVEC_DIR=/tmp/zvec gem install zvec-ruby
-```
-
-Or using the included helper script:
+On any other platform, or on Darwin with a Ruby version other than 3.3, Bundler falls back to the source gem. Building from source requires CMake, a C++17 compiler, and the pinned upstream zvec C++ library. Use `script/build_zvec.sh` to build zvec, then set `ZVEC_DIR` before installing:
 
 ```bash
-git clone https://github.com/johannesdwicahyo/zvec-ruby
-cd zvec-ruby
 ./script/build_zvec.sh
 ZVEC_DIR=/tmp/zvec bundle install && bundle exec rake compile
 ```
