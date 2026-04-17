@@ -2,6 +2,12 @@ require "rake/extensiontask"
 require "rake/testtask"
 require "bundler/gem_tasks"
 
+# Upstream zvec C++ library — pinned for reproducible builds.
+# Bump manually after verifying the new commit builds cleanly across all
+# platforms listed in CROSS_PLATFORMS.
+ZVEC_REPO = "https://github.com/alibaba/zvec"
+ZVEC_REF  = "f602ed30ce62efe3e759bb9308260119c488c1bc"
+
 GEMSPEC = Gem::Specification.load("zvec.gemspec")
 
 CROSS_RUBIES = %w[3.1.0 3.2.0 3.3.0 3.4.0]
@@ -63,17 +69,19 @@ namespace :gem do
     require "rake_compiler_dock"
 
     CROSS_PLATFORMS.each do |plat|
+      next if plat.include?("darwin")  # Darwin builds on macOS runners in CI, not here
+
       RakeCompilerDock.sh <<~SCRIPT, platform: plat
         set -e
-        # Build zvec inside the container
-        git clone --depth 1 https://github.com/alibaba/zvec /tmp/zvec
-        cd /tmp/zvec && mkdir build && cd build
+        git clone #{ZVEC_REPO} /tmp/zvec
+        cd /tmp/zvec
+        git checkout #{ZVEC_REF}
+        mkdir build && cd build
         cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local
         make -j$(nproc)
         make install
         ldconfig 2>/dev/null || true
 
-        # Build the native gem
         cd /payload
         export ZVEC_DIR=/tmp/zvec
         bundle install
