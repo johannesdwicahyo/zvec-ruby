@@ -48,3 +48,8 @@ Gemfile.lock
 # Claude Code
 .claude/
 CLAUDE.md
+
+# internal notes stay local
+/CLAUDE.md
+/.claude/
+/docs/superpowers/
